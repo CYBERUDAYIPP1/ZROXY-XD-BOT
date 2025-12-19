@@ -14,6 +14,12 @@ const plugins = []
 global.plugins = plugins
 const startTime = Date.now()
 
+// ===== GLOBAL BOT IMAGE (USED EVERYWHERE) =====
+const BOT_IMAGE_PATH = path.join(__dirname, "assets", "bot_image.jpg")
+const BOT_IMAGE = fs.existsSync(BOT_IMAGE_PATH)
+  ? fs.readFileSync(BOT_IMAGE_PATH)
+  : null
+
 // ================= LOAD PLUGINS =================
 const pluginPath = path.join(__dirname, "plugins")
 if (fs.existsSync(pluginPath)) {
@@ -43,6 +49,14 @@ async function startBot() {
 
   sock.ev.on("creds.update", saveCreds)
 
+  // ===== GLOBAL IMAGE REPLY HELPER =====
+  sock.replyWithImage = async (jid, text) => {
+    if (BOT_IMAGE) {
+      return sock.sendMessage(jid, { image: BOT_IMAGE, caption: text })
+    }
+    return sock.sendMessage(jid, { text })
+  }
+
   // ================= PAIR CODE =================
   if (!state.creds.registered) {
     const phoneNumber = config.pairingNumber
@@ -71,21 +85,12 @@ async function startBot() {
     if (connection === "open") {
       console.log("🔥 ZROXY BOT CONNECTED SUCCESSFULLY")
 
-      // Send boxed UI message to bot's own number
+      // Send UI message to bot's own number
       try {
         const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net"
         const now = new Date().toLocaleString()
-        const uiMessage = `
-╔════════════════════════════╗
-║ 🤖  BOT CONNECTED SUCCESSFULLY  ║
-╠════════════════════════════╣
-║ ⏰ Time : ${now}             
-║ ✅ Status : Online & Ready  
-╠════════════════════════════╣
-║ 🌐 Make sure to join channel
-╚════════════════════════════╝
-`
-        await sock.sendMessage(botNumber, { text: uiMessage })
+        const uiMessage = `🤖 BOT CONNECTED SUCCESSFULLY\n\n⏰ Time: ${now}\n✅ Status: Online & Ready`
+        await sock.replyWithImage(botNumber, uiMessage)
       } catch (err) {
         console.error("❌ Error sending bot connection message:", err.message)
       }
@@ -101,7 +106,7 @@ async function startBot() {
   // ================= MESSAGES =================
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
-      const msg = messages[0]
+      const msg = messages?.[0]
       if (!msg || !msg.message) return
 
       const from = msg.key.remoteJid
@@ -119,10 +124,18 @@ async function startBot() {
       const command = args.shift().toLowerCase()
       const runtime = Math.floor((Date.now() - startTime) / 1000)
 
-      // ============ BUILT-IN COMMANDS =============
-      if (command === "ping") return sock.sendMessage(from, { text: "🏓 Pong! ZROXY-Bot is alive" })
-      if (command === "alive") return sock.sendMessage(from, { text: "🔥 ZROXY BOT ONLINE\n🛡 Anti-crash active ✅" })
-      if (command === "runtime") return sock.sendMessage(from, { text: `⏱ Uptime: ${runtime} seconds` })
+      // ============ BUILT-IN COMMANDS (WITH IMAGE) =============
+      if (command === "ping") {
+        return sock.replyWithImage(from, "🏓 Pong! ZROXY-Bot is alive")
+      }
+
+      if (command === "alive") {
+        return sock.replyWithImage(from, "🔥 ZROXY BOT ONLINE\n🛡 Anti-crash active ✅")
+      }
+
+      if (command === "runtime") {
+        return sock.replyWithImage(from, `⏱ Uptime: ${runtime} seconds`)
+      }
 
       // ================= PLUGIN COMMANDS =================
       const plugin = plugins.find(p => p.command === command)
