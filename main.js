@@ -11,6 +11,7 @@ const config = require("./config")
 
 // ================= GLOBAL =================
 const plugins = []
+global.plugins = plugins
 const startTime = Date.now()
 
 // ================= LOAD PLUGINS =================
