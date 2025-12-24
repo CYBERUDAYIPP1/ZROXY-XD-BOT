@@ -3,7 +3,7 @@ const path = require("path")
 const { downloadMediaMessage } = require("@whiskeysockets/baileys")
 
 module.exports = {
-  command: "save",
+  command: "[save]",
   run: async (sock, msg) => {
     const from = msg.key.remoteJid
     const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage
@@ -32,3 +32,4 @@ module.exports = {
     await sock.sendMessage(from, { text: "✅ Media saved" })
   }
 }
+
