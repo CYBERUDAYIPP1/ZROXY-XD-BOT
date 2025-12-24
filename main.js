@@ -5,6 +5,7 @@ const {
   useMultiFileAuthState,
   DisconnectReason
 } = require("@whiskeysockets/baileys")
+
 const fs = require("fs")
 const path = require("path")
 const config = require("./config")
@@ -14,7 +15,7 @@ const plugins = []
 global.plugins = plugins
 const startTime = Date.now()
 
-// ===== GLOBAL BOT IMAGE (USED EVERYWHERE) =====
+// ===== BOT IMAGE =====
 const BOT_IMAGE_PATH = path.join(__dirname, "assets", "bot_image.jpg")
 const BOT_IMAGE = fs.existsSync(BOT_IMAGE_PATH)
   ? fs.readFileSync(BOT_IMAGE_PATH)
@@ -31,7 +32,7 @@ if (fs.existsSync(pluginPath)) {
         plugins.push(plugin)
         console.log(`✅ Plugin loaded: ${file}`)
       } catch (e) {
-        console.log(`❌ Failed plugin: ${file}`, e.message)
+        console.log(`❌ Plugin load failed: ${file}`, e.message)
       }
     })
 }
@@ -42,14 +43,13 @@ async function startBot() {
 
   const sock = makeWASocket({
     auth: state,
-    printQRInTerminal: false,
-    syncFullHistory: false,
-    markOnlineOnConnect: true
+    markOnlineOnConnect: true,
+    syncFullHistory: false
   })
 
   sock.ev.on("creds.update", saveCreds)
 
-  // ===== GLOBAL IMAGE REPLY HELPER =====
+  // ===== IMAGE REPLY HELPER =====
   sock.replyWithImage = async (jid, text) => {
     if (BOT_IMAGE) {
       return sock.sendMessage(jid, { image: BOT_IMAGE, caption: text })
@@ -70,10 +70,7 @@ async function startBot() {
         let code = await sock.requestPairingCode(phoneNumber)
         code = code.match(/.{1,4}/g).join("-")
         console.log("\n📱 PAIR THIS DEVICE")
-        console.log("════════════════════")
         console.log("🔢 Pairing Code:", code)
-        console.log("════════════════════")
-        console.log("WhatsApp → Linked Devices → Link a device → Enter code\n")
       } catch (err) {
         console.log("❌ Pairing error:", err.message)
       }
@@ -82,72 +79,88 @@ async function startBot() {
 
   // ================= CONNECTION =================
   sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-    if (connection === "open") {
-      console.log("🔥 ZROXY BOT CONNECTED SUCCESSFULLY")
+  if (connection === "open") {
+    console.log("🔥 ZROXY BOT CONNECTED")
 
-      // Send UI message to bot's own number
-      try {
-        const botNumber = sock.user.id.split(":")[0] + "@s.whatsapp.net"
-        const now = new Date().toLocaleString()
-        const uiMessage = `🤖 BOT CONNECTED SUCCESSFULLY\n\n⏰ Time: ${now}\n✅ Status: Online & Ready`
-        await sock.replyWithImage(botNumber, uiMessage)
-      } catch (err) {
-        console.error("❌ Error sending bot connection message:", err.message)
-      }
+    // ✅ SELF MESSAGE WITH IMAGE
+    try {
+      const botJid = sock.user.id.split(":")[0] + "@s.whatsapp.net"
+      const time = new Date().toLocaleString()
+
+      const text =
+        `🤖 ZROXY BOT CONNECTED\n\n` +
+        `⏰ Time: ${time}\n` +
+        `✅ Status: Online & Working`
+
+      await sock.replyWithImage(botJid, text)
+    } catch (err) {
+      console.log("⚠ Self message error:", err.message)
     }
+  }
 
-    if (connection === "close") {
-      const reason = lastDisconnect?.error?.output?.statusCode
-      console.log("❌ Connection closed. Reason:", reason)
-      if (reason !== DisconnectReason.loggedOut) startBot()
-    }
-  })
+  if (connection === "close") {
+    const reason = lastDisconnect?.error?.output?.statusCode
+    if (reason !== DisconnectReason.loggedOut) startBot()
+  }
+})
 
-  // ================= MESSAGES =================
+
+  // ================= MESSAGE HANDLER =================
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
       const msg = messages?.[0]
-      if (!msg || !msg.message) return
+      if (!msg?.message) return
+      if (!msg?.key?.remoteJid) return
 
       const from = msg.key.remoteJid
-      const sender = (msg.key.participant || from).split(":")[0] + "@s.whatsapp.net"
+      if (from === "status@broadcast") return
+
+      const sender =
+        (msg.key.participant || from).split(":")[0] + "@s.whatsapp.net"
+
       const text =
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
+        msg.message.imageMessage?.caption ||
+        msg.message.videoMessage?.caption ||
         ""
 
-      const isOwner = config.owner.includes(sender)
       if (!text.startsWith(config.prefix)) return
-      if (config.mode === "private" && !isOwner) return
 
       const args = text.slice(config.prefix.length).trim().split(/ +/)
       const command = args.shift().toLowerCase()
+
+      const isOwner = config.owner.includes(sender)
+      if (config.mode === "private" && !isOwner) return
+
       const runtime = Math.floor((Date.now() - startTime) / 1000)
 
-      // ============ BUILT-IN COMMANDS (WITH IMAGE) =============
+      // ================= BUILT-IN COMMANDS =================
       if (command === "ping") {
-        return sock.replyWithImage(from, "🏓 Pong! ZROXY-Bot is alive")
+        return sock.replyWithImage(from, "🏓 Pong! Bot is working")
       }
 
       if (command === "alive") {
-        return sock.replyWithImage(from, "🔥 ZROXY BOT ONLINE\n🛡 Anti-crash active ✅")
+        return sock.replyWithImage(from, "🔥 ZROXY BOT ONLINE")
       }
 
       if (command === "runtime") {
-        return sock.replyWithImage(from, `⏱ Uptime: ${runtime} seconds`)
+        return sock.replyWithImage(from, `⏱ Uptime: ${runtime}s`)
       }
 
       // ================= PLUGIN COMMANDS =================
-      const plugin = plugins.find(p => p.command === command)
-      if (plugin?.run) await plugin.run(sock, msg, args)
-
-      // ================= PLUGIN INTERCEPTORS =================
-      plugins.forEach(p => {
-        if (typeof p.intercept === "function") p.intercept(sock, msg)
-      })
+      for (const p of plugins) {
+        if (
+          Array.isArray(p.command) &&
+          p.command.includes(command) &&
+          typeof p.run === "function"
+        ) {
+          await p.run(sock, msg, args)
+        }
+      }
 
     } catch (err) {
-      console.log("❌ Message Handler Error:", err.message)
+      console.log("❌ Message Handler Error:", err)
     }
   })
 }
