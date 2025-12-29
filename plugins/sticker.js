@@ -2,7 +2,7 @@ const { Sticker, StickerTypes } = require("wa-sticker-formatter")
 const { downloadMediaMessage } = require("@whiskeysockets/baileys")
 
 module.exports = {
-  command: "[sticker]",
+  command: ["sticker"],
 
   async run(sock, msg) {
     try {
@@ -60,4 +60,5 @@ module.exports = {
     }
   }
 }
+
 
