@@ -3,7 +3,7 @@ const sharp = require("sharp"); // npm i sharp
 const fs = require("fs");
 
 module.exports = {
-  command: ["sticker2img", "s2i"],
+  command: ["toimg", "s2i"],
 
   async run(sock, msg) {
     try {
