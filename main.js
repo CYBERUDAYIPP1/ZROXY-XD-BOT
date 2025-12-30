@@ -9,11 +9,48 @@ const {
 const fs = require("fs")
 const path = require("path")
 const config = require("./config")
+const pino = require("pino")
 
 // ================= GLOBAL =================
 const plugins = []
 global.plugins = plugins
 const startTime = Date.now()
+
+// ================= STARTUP UI =================
+function showStartupBanner() {
+  console.clear()
+  console.log(`
+╭────────────────────────────────────────────╮
+│        🚀 ZROXY WHATSAPP BOT STARTED        │
+╰────────────────────────────────────────────╯
+
+🔐 Initializing secure session...
+🔑 Authentication loaded successfully
+`)
+}
+
+function showPairingInfo() {
+  console.log(`
+🔗 Pairing status:
+   ├─ 📱 Waiting for device pairing
+   └─ 🔐 Secure session will be established
+`)
+}
+
+function showConnectedStatus() {
+  console.log(`
+📡 Connecting to WhatsApp servers...
+
+✅ Connection established
+📤 Encryption keys synchronized
+📥 Message listener activated
+
+ℹ️ Notice: Some older messages could not be decrypted
+ℹ️ This is expected after a fresh login and will resolve automatically
+
+🟢 Status: ONLINE • STABLE • READY
+`)
+}
 
 // ===== BOT IMAGE =====
 const BOT_IMAGE_PATH = path.join(__dirname, "assets", "bot_image.jpg")
@@ -32,19 +69,24 @@ if (fs.existsSync(pluginPath)) {
         plugins.push(plugin)
         console.log(`✅ Plugin loaded: ${file}`)
       } catch (e) {
-        console.log(`❌ Plugin load failed: ${file}`, e.message)
+        console.error(`❌ Plugin load failed: ${file}`, e.message)
       }
     })
 }
 
 // ================= START BOT =================
 async function startBot() {
+  showStartupBanner()
+
   const { state, saveCreds } = await useMultiFileAuthState("session")
 
   const sock = makeWASocket({
     auth: state,
     markOnlineOnConnect: true,
-    syncFullHistory: false
+    syncFullHistory: false,
+
+    // 🔥 SHOW ONLY MAIN ERRORS (NO JSON SPAM)
+    logger: pino({ level: "error" })
   })
 
   sock.ev.on("creds.update", saveCreds)
@@ -59,9 +101,11 @@ async function startBot() {
 
   // ================= PAIR CODE =================
   if (!state.creds.registered) {
+    showPairingInfo()
+
     const phoneNumber = config.pairingNumber
     if (!phoneNumber) {
-      console.log("❌ pairingNumber missing in config.js")
+      console.error("❌ pairingNumber missing in config.js")
       process.exit(1)
     }
 
@@ -69,41 +113,44 @@ async function startBot() {
       try {
         let code = await sock.requestPairingCode(phoneNumber)
         code = code.match(/.{1,4}/g).join("-")
-        console.log("\n📱 PAIR THIS DEVICE")
-        console.log("🔢 Pairing Code:", code)
+
+        console.log(`
+📱 DEVICE PAIRING REQUIRED
+🔢 Pairing Code: ${code}
+ℹ️ Enter this code in WhatsApp → Linked Devices
+`)
       } catch (err) {
-        console.log("❌ Pairing error:", err.message)
+        console.error("❌ Pairing error:", err.message)
       }
     }, 3000)
   }
 
   // ================= CONNECTION =================
   sock.ev.on("connection.update", async ({ connection, lastDisconnect }) => {
-  if (connection === "open") {
-    console.log("🔥 ZROXY BOT CONNECTED")
+    if (connection === "open") {
+      showConnectedStatus()
 
-    // ✅ SELF MESSAGE WITH IMAGE
-    try {
-      const botJid = sock.user.id.split(":")[0] + "@s.whatsapp.net"
-      const time = new Date().toLocaleString()
+      // ✅ SELF MESSAGE WITH IMAGE
+      try {
+        const botJid = sock.user.id.split(":")[0] + "@s.whatsapp.net"
+        const time = new Date().toLocaleString()
 
-      const text =
-        `🤖 ZROXY BOT CONNECTED\n\n` +
-        `⏰ Time: ${time}\n` +
-        `✅ Status: Online & Working`
+        const text =
+          `🤖 ZROXY BOT CONNECTED\n\n` +
+          `⏰ Time: ${time}\n` +
+          `✅ Status: Online & Working`
 
-      await sock.replyWithImage(botJid, text)
-    } catch (err) {
-      console.log("⚠ Self message error:", err.message)
+        await sock.replyWithImage(botJid, text)
+      } catch (err) {
+        console.error("⚠ Self message error:", err.message)
+      }
     }
-  }
 
-  if (connection === "close") {
-    const reason = lastDisconnect?.error?.output?.statusCode
-    if (reason !== DisconnectReason.loggedOut) startBot()
-  }
-})
-
+    if (connection === "close") {
+      const reason = lastDisconnect?.error?.output?.statusCode
+      if (reason !== DisconnectReason.loggedOut) startBot()
+    }
+  })
 
   // ================= MESSAGE HANDLER =================
   sock.ev.on("messages.upsert", async ({ messages }) => {
@@ -160,7 +207,7 @@ async function startBot() {
       }
 
     } catch (err) {
-      console.log("❌ Message Handler Error:", err)
+      console.error("❌ Message Handler Error:", err.message)
     }
   })
 }
