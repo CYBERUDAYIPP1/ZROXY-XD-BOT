@@ -1,5 +1,5 @@
 module.exports = {
-  command: "[menu]",
+  command: ["menu"],
 
   run: async (sock, msg, args) => {
     try {
@@ -28,4 +28,5 @@ module.exports = {
     }
   }
 }
+
 
